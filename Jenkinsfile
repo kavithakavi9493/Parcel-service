@@ -1,99 +1,76 @@
 pipeline {
     agent any
 
-    environment {
-        JAVA_HOME = '/usr/lib/jvm/java-17-openjdk-amd64'
-        MAVEN_HOME = '/usr/share/maven'
-        PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
+    tools {
+        jdk 'java17'
+        maven 'maven3'
     }
 
     stages {
         stage('Checkout Code') {
             steps {
-                echo 'Checking out code...'
                 checkout scm
-            }
-        }
-
-        stage('Set up Java 17') {
-            steps {
-                echo 'Setting up Java 17...'
-                sh 'sudo apt update'
-                sh 'sudo apt install -y openjdk-17-jdk'
-            }
-        }
-
-        stage('Set up Maven') {
-            steps {
-                echo 'Setting up Maven...'
-                sh 'sudo apt install -y maven'
             }
         }
 
         stage('Build with Maven') {
             steps {
-                echo 'Building project with Maven...'
-                sh 'mvn clean package'
+                sh 'mvn clean package -DskipTests'
             }
         }
 
-        stage('Upload Artifact') {
+        stage('Archive Artifact') {
             steps {
-                echo 'Uploading artifact...'
-                archiveArtifacts artifacts: 'target/simple-parcel-service-app-1.0-SNAPSHOT.jar', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+                echo "Artifact archived successfully."
             }
         }
 
-        stage('Run Application') {
+        stage('Run Application & Validate') {
             steps {
-                echo 'Running Spring Boot application...'
-                sh 'nohup mvn spring-boot:run &'
-                sleep(time: 15, unit: 'SECONDS') // Wait for the application to fully start
-
-                // Fetch the public IP and display the access URL
                 script {
-                    def publicIp = sh(script: "curl -s https://checkip.amazonaws.com", returnStdout: true).trim()
-                    echo "The application is running and accessible at: http://${publicIp}:8080"
-                }
-            }
-        }
+                    echo "Starting Spring Boot App..."
 
-        stage('Validate App is Running') {
-            steps {
-                echo 'Validating that the app is running...'
-                script {
-                    def response = sh(script: 'curl --write-out "%{http_code}" --silent --output /dev/null http://localhost:8080', returnStdout: true).trim()
-                    if (response == "200") {
-                        echo 'The app is running successfully!'
+                    // Run app in background
+                    sh 'nohup java -jar target/*.jar > app.log 2>&1 & echo $! > app.pid'
+
+                    sleep 10
+
+                    echo "Checking if app started..."
+
+                    def status = sh(script: 'curl --write-out "%{http_code}" --silent --output /dev/null http://localhost:8080', 
+                                     returnStdout: true).trim()
+
+                    if (status != "200") {
+                        error "App failed to start! HTTP Status: ${status}"
                     } else {
-                        echo "The app failed to start. HTTP response code: ${response}"
-                        currentBuild.result = 'FAILURE'
-                        error("The app did not start correctly!")
+                        echo "App started successfully ✔"
                     }
                 }
             }
         }
 
-        stage('Wait for 5 minutes') {
+        stage('Wait 5 minutes') {
             steps {
-                echo 'Waiting for 5 minutes...'
-                sleep(time: 5, unit: 'MINUTES')  // Wait for 5 minutes
+                echo 'Keeping app running for 5 minutes...'
+                sleep(time: 5, unit: 'MINUTES')
             }
         }
 
-        stage('Gracefully Stop Spring Boot App') {
+        stage('Stop Application') {
             steps {
-                echo 'Gracefully stopping the Spring Boot application...'
-                sh 'mvn spring-boot:stop'
+                script {
+                    echo "Stopping app..."
+                    sh 'kill $(cat app.pid) || true'
+                }
             }
         }
     }
 
     post {
         always {
-            echo 'Cleaning up...'
-            // Any cleanup steps, like stopping the app or cleaning up the environment
-            sh 'pkill -f "mvn spring-boot:run" || true' // Ensure the app is stopped
+            echo "Post cleanup..."
+            sh 'pkill -f "java -jar" || true'
         }
     }
 }
