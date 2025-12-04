@@ -10,7 +10,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git branch: 'feature-1', url: 'https://github.com/kavithakavi9493/Parcel-service.git'
+                git branch: 'feature-2', url: 'https://github.com/kavithakavi9493/Parcel-service.git'
             }
         }
 
@@ -29,7 +29,7 @@ pipeline {
         stage('Run Application') {
             steps {
                   sh 'mvn spring-boot:run'
-                  dir('/var/lib/jenkins/workspace/Parcel_service_feature-1/target') {
+                  dir('/var/lib/jenkins/workspace/Parcel_service_feature-2/target') {
                    sh """
                      //   nohup java -jar simple-parcel-service-app-1.0-SNAPSHOT.jar > app.log 2>&1 &
                         //echo "Application started"
